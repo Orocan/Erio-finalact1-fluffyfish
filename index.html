@@ -243,31 +243,16 @@
       }
     }
 
-    function drawKelp() {
-      kelpStalks.forEach(kelp => {
-        // Draw top kelp
-        ctx.fillStyle = '#1A3C34';
-        ctx.fillRect(Math.floor(kelp.x), 0, Math.floor(kelpWidth), Math.floor(kelp.top));
-        ctx.strokeStyle = '#2E5C4E';
-        ctx.lineWidth = Math.floor(2 * scaleFactor);
-        ctx.beginPath();
-        for (let y = 0; y < kelp.top; y += 20 * scaleFactor) { // Fewer segments
-          ctx.moveTo(Math.floor(kelp.x + kelpWidth / 2 + 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20)), Math.floor(y));
-          ctx.lineTo(Math.floor(kelp.x + kelpWidth / 2 - 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20)), Math.floor(y + 5 * scaleFactor));
-        }
-        ctx.stroke();
-
-        // Draw bottom kelp
-        ctx.fillStyle = '#1A3C34';
-        ctx.fillRect(Math.floor(kelp.x), Math.floor(kelp.bottom), Math.floor(kelpWidth), Math.floor(canvas.height - kelp.bottom));
-        ctx.beginPath();
-        for (let y = kelp.bottom; y < canvas.height; y += 20 * scaleFactor) {
-          ctx.moveTo(Math.floor(kelp.x + kelpWidth / 2 + 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20)), Math.floor(y));
-          ctx.lineTo(Math.floor(kelp.x + kelpWidth / 2 - 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20)), Math.floor(y + 5 * scaleFactor));
-        }
-        ctx.stroke();
-      });
-    }
+function drawKelp() {
+  kelpStalks.forEach(kelp => {
+    // Set solid green color
+    ctx.fillStyle = '#1A3C34'; // Bright green; change to any green shade if preferred
+    // Draw top kelp
+    ctx.fillRect(Math.floor(kelp.x), 0, Math.floor(kelpWidth), Math.floor(kelp.top));
+    // Draw bottom kelp
+    ctx.fillRect(Math.floor(kelp.x), Math.floor(kelp.bottom), Math.floor(kelpWidth), Math.floor(canvas.height - kelp.bottom));
+  });
+}
 
     function updateFish() {
       if (!fish.isDead) {
