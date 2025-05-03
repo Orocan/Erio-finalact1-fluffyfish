@@ -10,6 +10,9 @@
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <style>
     canvas { border: 1px solid black; display: block; margin: 0 auto; }
+    @media (max-width: 767px) {
+      canvas { width: 100vw; height: 100vh; }
+    }
     #startScreen, #gameOverScreen { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
     #startScreen { background: rgba(0, 0, 0, 0.7); color: white; border-radius: 10px; }
     #playButton:hover { transform: scale(1.1); transition: transform 0.2s; }
@@ -115,6 +118,9 @@
     let kelpGap = 150;
     let frameCount = 0;
     let scaleFactor = 1;
+    let kelpWidth = 50;
+    let scoreFontSize = 30;
+    let scoreY = 50;
 
     // Set canvas size based on device
     function setCanvasSize() {
@@ -122,17 +128,30 @@
         // Desktop: larger canvas
         canvas.width = 600;
         canvas.height = 800;
+        scaleFactor = canvas.width / 400;
       } else {
-        // Mobile: full-screen
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        // Mobile: capped canvas size
+        const maxWidth = 400;
+        const maxHeight = 600;
+        const aspectRatio = window.innerWidth / window.innerHeight;
+        if (aspectRatio > maxWidth / maxHeight) {
+          canvas.width = Math.min(maxWidth, window.innerWidth);
+          canvas.height = canvas.width / aspectRatio;
+        } else {
+          canvas.height = Math.min(maxHeight, window.innerHeight);
+          canvas.width = canvas.height * aspectRatio;
+        }
+        scaleFactor = canvas.width / 400;
       }
-      scaleFactor = canvas.width / 400; // Scale relative to original 400x600 canvas
-      // Update fish position
-      fish.x = 100 * scaleFactor;
-      fish.y = canvas.height / 2;
+      // Precompute scaled constants
+      kelpWidth = 50 * scaleFactor;
+      kelpGap = 150 * scaleFactor;
+      scoreFontSize = 30 * scaleFactor;
+      scoreY = 50 * scaleFactor;
       fish.width = 40 * scaleFactor;
       fish.height = 30 * scaleFactor;
+      fish.x = 100 * scaleFactor;
+      fish.y = canvas.height / 2;
     }
 
     // Initialize canvas size
@@ -159,7 +178,7 @@
       kelpStalks = [];
       bubbles = [];
       score = 0;
-      kelpSpeed = 1.0; // Reset kelp speed
+      kelpSpeed = 1.0;
       gameOver = false;
       frameCount = 0;
       gameOverScreen.style.display = 'none';
@@ -174,81 +193,77 @@
     function drawFish() {
       const img = fish.isDead ? deadFishImg : fishImg;
       ctx.save();
-      ctx.translate(fish.x + fish.width / 2, fish.y + fish.height / 2);
+      ctx.translate(Math.floor(fish.x + fish.width / 2), Math.floor(fish.y + fish.height / 2));
       
-      // Flap animation or velocity-based tilt
       let angle;
       if (fish.isFlapping > 0) {
-        angle = Math.sin(fish.isFlapping * Math.PI / 12) * 0.4; // Flap animation: up to 0.4 radians (~23 degrees)
+        angle = Math.sin(fish.isFlapping * Math.PI / 12) * 0.4;
         fish.isFlapping--;
       } else {
-        angle = Math.max(-0.5, Math.min(0.5, fish.vy * 0.1)); // Velocity-based tilt: up to ±0.5 radians (~±28.6 degrees)
+        angle = Math.max(-0.5, Math.min(0.5, fish.vy * 0.1));
       }
       ctx.rotate(angle);
       
-      ctx.drawImage(img, -fish.width / 2, -fish.height / 2, fish.width, fish.height);
+      ctx.drawImage(img, Math.floor(-fish.width / 2), Math.floor(-fish.height / 2), Math.floor(fish.width), Math.floor(fish.height));
       ctx.restore();
     }
 
     function drawBubbles() {
       bubbles.forEach(bubble => {
-        ctx.fillStyle = `rgba(200, 200, 255, ${bubble.opacity})`; // Light blue with fading opacity
+        ctx.fillStyle = `rgba(200, 200, 255, ${bubble.opacity})`;
         ctx.beginPath();
-        ctx.arc(bubble.x, bubble.y, bubble.radius, 0, Math.PI * 2);
+        ctx.arc(Math.floor(bubble.x), Math.floor(bubble.y), Math.floor(bubble.radius), 0, Math.PI * 2);
         ctx.fill();
       });
     }
 
     function updateBubbles() {
       bubbles.forEach(bubble => {
-        bubble.y -= bubble.vy * scaleFactor; // Rise upward
-        bubble.x += bubble.vx * scaleFactor; // Horizontal drift (leftward)
-        bubble.opacity -= 0.016; // Fade out over ~60 frames (1 second)
+        bubble.y -= bubble.vy * scaleFactor;
+        bubble.x += bubble.vx * scaleFactor;
+        bubble.opacity -= 0.01; // Slower fade
       });
-      bubbles = bubbles.filter(bubble => bubble.opacity > 0 && bubble.y > 0); // Remove faded or off-screen bubbles
+      bubbles = bubbles.filter(bubble => bubble.opacity > 0 && bubble.y > 0);
     }
 
     function spawnBubbles() {
-      const numBubbles = 3 + Math.floor(Math.random() * 3); // 3-5 bubbles
+      const numBubbles = 1 + Math.floor(Math.random() * 3); // 1-3 bubbles
       for (let i = 0; i < numBubbles; i++) {
         bubbles.push({
-          x: fish.x + fish.width, // Spawn on right side of fish
-          y: fish.y + fish.height / 2, // Center vertically
-          radius: (5 + Math.random() * 5) * scaleFactor, // Random size 5-10px
-          vy: (1 + Math.random() * 0.5), // Rise speed
-          vx: (-0.5 + Math.random() * 0.3), // Drift leftward with slight variation
-          opacity: 0.8 // Start slightly transparent
+          x: fish.x + fish.width,
+          y: fish.y + fish.height / 2,
+          radius: (5 + Math.random() * 5) * scaleFactor,
+          vy: (1 + Math.random() * 0.5),
+          vx: (-0.5 + Math.random() * 0.3),
+          opacity: 0.8
         });
       }
-      if (bubbles.length > 50) {
-        bubbles.splice(0, bubbles.length - 50); // Cap at 50 bubbles for performance
+      if (bubbles.length > 20) {
+        bubbles.splice(0, bubbles.length - 20); // Cap at 20
       }
     }
 
     function drawKelp() {
       kelpStalks.forEach(kelp => {
-        // Draw top kelp (hanging down)
-        ctx.fillStyle = '#1A3C34'; // Dark green for deep-sea kelp
-        ctx.fillRect(kelp.x, 0, 50 * scaleFactor, kelp.top);
-        // Add wavy texture
+        // Draw top kelp
+        ctx.fillStyle = '#1A3C34';
+        ctx.fillRect(Math.floor(kelp.x), 0, Math.floor(kelpWidth), Math.floor(kelp.top));
         ctx.strokeStyle = '#2E5C4E';
-        ctx.lineWidth = 2 * scaleFactor;
+        ctx.lineWidth = Math.floor(2 * scaleFactor);
         ctx.beginPath();
-        for (let y = 0; y < kelp.top; y += 10 * scaleFactor) {
-          ctx.moveTo(kelp.x + 25 * scaleFactor + 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20), y);
-          ctx.lineTo(kelp.x + 25 * scaleFactor - 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20), y + 5 * scaleFactor);
+        for (let y = 0; y < kelp.top; y += 20 * scaleFactor) { // Fewer segments
+          ctx.moveTo(Math.floor(kelp.x + kelpWidth / 2 + 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20)), Math.floor(y));
+          ctx.lineTo(Math.floor(kelp.x + kelpWidth / 2 - 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20)), Math.floor(y + 5 * scaleFactor));
         }
         ctx.stroke();
 
-        // Draw bottom kelp (growing up)
+        // Draw bottom kelp
         ctx.fillStyle = '#1A3C34';
-        ctx.fillRect(kelp.x, kelp.bottom, 50 * scaleFactor, canvas.height - kelp.bottom);
-        // Add wavy texture
-        ctx.strokeStyle = '#2E5C4E';
+        ctx.fillRect(Math.floor(kelp.x), Math.floor(kelp.bottom), Math.floor(kelpWidth), Math.floor(canvas.height - kelp.bottom));
         ctx.beginPath();
-        for (let y = kelp.bottom; y < canvas.height; y += 10 * scaleFactor) {
-          ctx.moveTo(kelp.x + 25 * scaleFactor + 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20), y);
-          ctx.lineTo(kelp.x + 25 * scaleFactor - 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20), y + 5 * scaleFactor);
+        for (let y = kelp.bottom; y < canvas.height; y += 20 * scaleFactor) {
+          ctx.moveTo(Math.floor(kelp.x + kelpWidth / 2 + 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20)), Math.floor(y));
+          ctx.lineTo(Math.floor(kelp.x + kelpWidth / 2 - 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20)), Math.floor(y + 5 * scaleFactor));
         }
         ctx.stroke();
       });
@@ -279,36 +294,35 @@
 
     function updateKelp() {
       if (frameCount % 200 === 0 && !fish.isDead) {
-        let top = Math.random() * (canvas.height - kelpGap * scaleFactor - 100 * scaleFactor) + 50 * scaleFactor;
-        kelpStalks.push({ x: canvas.width, top: top, bottom: top + kelpGap * scaleFactor, scored: false });
+        let top = Math.random() * (canvas.height - kelpGap - 100 * scaleFactor) + 50 * scaleFactor;
+        kelpStalks.push({ x: canvas.width, top: top, bottom: top + kelpGap, scored: false });
       }
-      // Increase kelpSpeed every 10 seconds (600 frames at ~60 FPS)
       if (frameCount % 600 === 0 && !fish.isDead) {
-        kelpSpeed = Math.min(2.0, kelpSpeed + 0.1); // Increment by 0.1, cap at 2.0
+        kelpSpeed = Math.min(2.0, kelpSpeed + 0.1);
       }
       kelpStalks.forEach(kelp => {
         kelp.x -= kelpSpeed * scaleFactor;
-        if (!kelp.scored && kelp.x + 50 * scaleFactor < fish.x && !fish.isDead) {
+        if (!kelp.scored && kelp.x + kelpWidth < fish.x && !fish.isDead) {
           score++;
           kelp.scored = true;
         }
-        if (!fish.isDead && fish.x + fish.width > kelp.x && fish.x < kelp.x + 50 * scaleFactor &&
+        if (!fish.isDead && fish.x + fish.width > kelp.x && fish.x < kelp.x + kelpWidth &&
             (fish.y < kelp.top || fish.y + fish.height > kelp.bottom)) {
           fish.isDead = true;
           fish.vy = 2 * scaleFactor;
           hitSound.play();
         }
       });
-      kelpStalks = kelpStalks.filter(kelp => kelp.x + 50 * scaleFactor > 0);
+      kelpStalks = kelpStalks.filter(kelp => kelp.x + kelpWidth > 0);
     }
 
     function drawScore() {
       ctx.fillStyle = 'white';
       ctx.strokeStyle = 'black';
-      ctx.lineWidth = 2 * scaleFactor;
-      ctx.font = `${30 * scaleFactor}px Arial`;
-      ctx.strokeText(`${score}`, canvas.width / 2, 50 * scaleFactor);
-      ctx.fillText(`${score}`, canvas.width / 2, 50 * scaleFactor);
+      ctx.lineWidth = Math.floor(2 * scaleFactor);
+      ctx.font = `${Math.floor(scoreFontSize)}px Arial`;
+      ctx.strokeText(`${score}`, Math.floor(canvas.width / 2), Math.floor(scoreY));
+      ctx.fillText(`${score}`, Math.floor(canvas.width / 2), Math.floor(scoreY));
     }
 
     function endGame() {
@@ -370,7 +384,7 @@
         document.addEventListener('keydown', (e) => {
           if (e.code === 'Space' && !gameOver && gameStarted && !fish.isDead) {
             fish.vy = flap * scaleFactor;
-            fish.isFlapping = 12; // Trigger flap animation for 12 frames
+            fish.isFlapping = 12;
             spawnBubbles();
             flapSound.play();
           }
@@ -379,7 +393,7 @@
         canvas.addEventListener('click', () => {
           if (!gameOver && gameStarted && !fish.isDead) {
             fish.vy = flap * scaleFactor;
-            fish.isFlapping = 12; // Trigger flap animation for 12 frames
+            fish.isFlapping = 12;
             spawnBubbles();
             flapSound.play();
           }
