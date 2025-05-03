@@ -1,5 +1,5 @@
 {
-    "name": "Flappy Fish PWA",
+    "name": "Flappy Fish",
     "short_name": "Flappy Fish",
     "start_url": "index.html",
     "display": "standalone",
@@ -7,12 +7,12 @@
     "theme_color": "#1E90FF",
     "icons": [
       {
-        "src": "assets/images/icon.png",
+        "src": "assets/images/Icon.png",
         "sizes": "192x192",
         "type": "image/png"
       },
       {
-        "src": "assets/images/icon.png",
+        "src": "assets/images/Icon.png",
         "sizes": "512x512",
         "type": "image/png"
       }

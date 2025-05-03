@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#1E90FF">
+  <meta name="theme-color" content="#000000">
   <title>Flappy Fish PWA</title>
   <link rel="manifest" href="manifest.json">
   <link rel="icon" href="assets/images/icon.png">
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <style>
-    canvas { border: 1px solid black; }
+    canvas { border: 1px solid black; display: block; margin: 0 auto; }
     #startScreen, #gameOverScreen { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); }
     #startScreen { background: rgba(0, 0, 0, 0.7); color: white; border-radius: 10px; }
     #playButton:hover { transform: scale(1.1); transition: transform 0.2s; }
@@ -17,27 +17,32 @@
     @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-10px); } }
   </style>
 </head>
-<body class="bg-blue-100 flex justify-center items-center h-screen">
+<body class="bg-black flex justify-center items-center h-screen">
   <div class="text-center">
-    <h1 class="text-2xl font-bold mb-2">Flappy Fish</h1>
-    <canvas id="gameCanvas" width="400" height="600"></canvas>
+    <h1 class="text-2xl font-bold mb-2 text-white">Flappy Fish</h1>
+    <canvas id="gameCanvas"></canvas>
     <div id="startScreen" class="p-8 rounded-lg text-center max-w-md">
       <h2 class="text-3xl font-bold mb-4" style="text-shadow: 2px 2px #000;">Flappy Fish</h2>
       <img src="assets/images/fish.png" class="fish-bob mx-auto mb-4" style="width: 40px; height: 30px;">
       <p class="mb-2 text-lg font-bold">How to Play:</p>
       <ul class="list-disc list-inside mb-6 text-left">
         <li>Tap/Click or Press <strong>Space</strong> to flap.</li>
-        <li>Pass through pipe gaps to score.</li>
-        <li>Avoid pipes and screen edges!</li>
+        <li>Pass through kelp gaps to score.</li>
+        <li>Avoid kelp and screen edges!</li>
       </ul>
       <button id="playButton" class="bg-green-500 text-white px-6 py-3 rounded-lg text-xl hover:bg-green-600">Play</button>
     </div>
     <div id="gameOverScreen" class="bg-white p-6 rounded shadow-lg">
       <h2 class="text-xl font-bold">Game Over</h2>
+      <p id="highScore" class="my-2 font-semibold"></p>
       <p id="finalScore" class="my-2"></p>
-      <button id="playAgain" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-700">Play Again</button>
+      <div class="flex justify-center space-x-4">
+        <button id="playAgain" class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-700">Play Again</button>
+        <button id="installButton" class="bg-green-500 text-white px-4 py-2 rounded hover:bg-green-600 hidden">Install Game</button>
+      </div>
     </div>
     <p id="offlineStatus" class="mt-2 text-red-500 hidden">No Internet Connection</p>
+    <p id="errorMessage" class="mt-2 text-red-500 hidden">Failed to load game assets. Please check your files.</p>
   </div>
 
   <audio id="bgMusic" loop>
@@ -60,31 +65,101 @@
     const playButton = document.getElementById('playButton');
     const gameOverScreen = document.getElementById('gameOverScreen');
     const finalScoreText = document.getElementById('finalScore');
+    const highScoreText = document.getElementById('highScore');
     const playAgainBtn = document.getElementById('playAgain');
     const offlineStatus = document.getElementById('offlineStatus');
+    const installButton = document.getElementById('installButton');
+    const errorMessage = document.getElementById('errorMessage');
+
+    // PWA install prompt
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      installButton.classList.remove('hidden');
+    });
+
+    installButton.addEventListener('click', async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        if (outcome === 'accepted') {
+          console.log('User accepted the install prompt');
+        } else {
+          console.log('User dismissed the install prompt');
+        }
+        deferredPrompt = null;
+        installButton.classList.add('hidden');
+      }
+    });
 
     // Load images
     const backgroundImg = new Image();
-    backgroundImg.src = 'assets/images/background.png';
+    backgroundImg.src = 'assets/images/background.jpg';
     const fishImg = new Image();
     fishImg.src = 'assets/images/fish.png';
+    const deadFishImg = new Image();
+    deadFishImg.src = 'assets/images/dead.png';
 
-    // Game variables - adjusted for better control
-    let fish = { x: 100, y: 300, vy: 0, width: 40, height: 30 };
-    let pipes = [];
+    // Game variables
+    let fish = { x: 100, y: 300, vy: 0, width: 40, height: 30, isDead: false, isFlapping: 0 };
+    let kelpStalks = [];
+    let bubbles = [];
     let score = 0;
+    let highScore = localStorage.getItem('highScore') ? parseInt(localStorage.getItem('highScore')) : 0;
     let gameOver = false;
     let gameStarted = false;
-    let gravity = 0.08;    // Gentle falling speed
-    let flap = -2.8;       // Reduced jump height
-    let pipeSpeed = 1.5;   // Slower pipe movement
-    let pipeGap = 150;     // Larger gap between pipes
+    let gravity = 0.05;
+    let flap = -2.8;
+    let kelpSpeed = 1.0;
+    let kelpGap = 150;
     let frameCount = 0;
+    let scaleFactor = 1;
+
+    // Set canvas size based on device
+    function setCanvasSize() {
+      if (window.innerWidth >= 768) {
+        // Desktop: larger canvas
+        canvas.width = 600;
+        canvas.height = 800;
+      } else {
+        // Mobile: full-screen
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+      }
+      scaleFactor = canvas.width / 400; // Scale relative to original 400x600 canvas
+      // Update fish position
+      fish.x = 100 * scaleFactor;
+      fish.y = canvas.height / 2;
+      fish.width = 40 * scaleFactor;
+      fish.height = 30 * scaleFactor;
+    }
+
+    // Initialize canvas size
+    setCanvasSize();
+
+    // Handle window resize
+    window.addEventListener('resize', () => {
+      setCanvasSize();
+      if (!gameStarted || gameOver) {
+        drawBackground();
+      }
+    });
 
     function resetGame() {
-      fish = { x: 100, y: 300, vy: 0, width: 40, height: 30 };
-      pipes = [];
+      fish = { 
+        x: 100 * scaleFactor, 
+        y: canvas.height / 2, 
+        vy: 0, 
+        width: 40 * scaleFactor, 
+        height: 30 * scaleFactor, 
+        isDead: false, 
+        isFlapping: 0 
+      };
+      kelpStalks = [];
+      bubbles = [];
       score = 0;
+      kelpSpeed = 1.0; // Reset kelp speed
       gameOver = false;
       frameCount = 0;
       gameOverScreen.style.display = 'none';
@@ -97,95 +172,155 @@
     }
 
     function drawFish() {
-      ctx.drawImage(fishImg, fish.x, fish.y, fish.width, fish.height);
+      const img = fish.isDead ? deadFishImg : fishImg;
+      ctx.save();
+      ctx.translate(fish.x + fish.width / 2, fish.y + fish.height / 2);
+      
+      // Flap animation or velocity-based tilt
+      let angle;
+      if (fish.isFlapping > 0) {
+        angle = Math.sin(fish.isFlapping * Math.PI / 12) * 0.4; // Flap animation: up to 0.4 radians (~23 degrees)
+        fish.isFlapping--;
+      } else {
+        angle = Math.max(-0.5, Math.min(0.5, fish.vy * 0.1)); // Velocity-based tilt: up to ±0.5 radians (~±28.6 degrees)
+      }
+      ctx.rotate(angle);
+      
+      ctx.drawImage(img, -fish.width / 2, -fish.height / 2, fish.width, fish.height);
+      ctx.restore();
     }
 
-    function drawPipes() {
-      pipes.forEach(pipe => {
-        // Draw top pipe
-        ctx.fillStyle = '#1E3A8A'; // Dark blue
-        ctx.fillRect(pipe.x, 0, 50, pipe.top);
-        // Add wavy seaweed texture
-        ctx.strokeStyle = '#2A4B6E';
+    function drawBubbles() {
+      bubbles.forEach(bubble => {
+        ctx.fillStyle = `rgba(200, 200, 255, ${bubble.opacity})`; // Light blue with fading opacity
         ctx.beginPath();
-        for (let y = 0; y < pipe.top; y += 10) {
-          ctx.moveTo(pipe.x + 25 + 5 * Math.sin(y / 20), y);
-          ctx.lineTo(pipe.x + 25 - 5 * Math.sin(y / 20), y + 5);
-        }
-        ctx.stroke();
-        // Rounded end
-        ctx.fillStyle = '#1E3A8A';
-        ctx.beginPath();
-        ctx.arc(pipe.x + 25, pipe.top, 25, 0, Math.PI, true);
+        ctx.arc(bubble.x, bubble.y, bubble.radius, 0, Math.PI * 2);
         ctx.fill();
+      });
+    }
 
-        // Draw bottom pipe
-        ctx.fillStyle = '#1E3A8A';
-        ctx.fillRect(pipe.x, pipe.bottom, 50, canvas.height - pipe.bottom);
-        // Add wavy seaweed texture
-        ctx.strokeStyle = '#2A4B6E';
+    function updateBubbles() {
+      bubbles.forEach(bubble => {
+        bubble.y -= bubble.vy * scaleFactor; // Rise upward
+        bubble.x += bubble.vx * scaleFactor; // Horizontal drift (leftward)
+        bubble.opacity -= 0.016; // Fade out over ~60 frames (1 second)
+      });
+      bubbles = bubbles.filter(bubble => bubble.opacity > 0 && bubble.y > 0); // Remove faded or off-screen bubbles
+    }
+
+    function spawnBubbles() {
+      const numBubbles = 3 + Math.floor(Math.random() * 3); // 3-5 bubbles
+      for (let i = 0; i < numBubbles; i++) {
+        bubbles.push({
+          x: fish.x + fish.width, // Spawn on right side of fish
+          y: fish.y + fish.height / 2, // Center vertically
+          radius: (5 + Math.random() * 5) * scaleFactor, // Random size 5-10px
+          vy: (1 + Math.random() * 0.5), // Rise speed
+          vx: (-0.5 + Math.random() * 0.3), // Drift leftward with slight variation
+          opacity: 0.8 // Start slightly transparent
+        });
+      }
+      if (bubbles.length > 50) {
+        bubbles.splice(0, bubbles.length - 50); // Cap at 50 bubbles for performance
+      }
+    }
+
+    function drawKelp() {
+      kelpStalks.forEach(kelp => {
+        // Draw top kelp (hanging down)
+        ctx.fillStyle = '#1A3C34'; // Dark green for deep-sea kelp
+        ctx.fillRect(kelp.x, 0, 50 * scaleFactor, kelp.top);
+        // Add wavy texture
+        ctx.strokeStyle = '#2E5C4E';
+        ctx.lineWidth = 2 * scaleFactor;
         ctx.beginPath();
-        for (let y = pipe.bottom; y < canvas.height; y += 10) {
-          ctx.moveTo(pipe.x + 25 + 5 * Math.sin(y / 20), y);
-          ctx.lineTo(pipe.x + 25 - 5 * Math.sin(y / 20), y + 5);
+        for (let y = 0; y < kelp.top; y += 10 * scaleFactor) {
+          ctx.moveTo(kelp.x + 25 * scaleFactor + 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20), y);
+          ctx.lineTo(kelp.x + 25 * scaleFactor - 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20), y + 5 * scaleFactor);
         }
         ctx.stroke();
-        // Rounded end
-        ctx.fillStyle = '#1E3A8A';
+
+        // Draw bottom kelp (growing up)
+        ctx.fillStyle = '#1A3C34';
+        ctx.fillRect(kelp.x, kelp.bottom, 50 * scaleFactor, canvas.height - kelp.bottom);
+        // Add wavy texture
+        ctx.strokeStyle = '#2E5C4E';
         ctx.beginPath();
-        ctx.arc(pipe.x + 25, pipe.bottom, 25, 0, Math.PI, false);
-        ctx.fill();
+        for (let y = kelp.bottom; y < canvas.height; y += 10 * scaleFactor) {
+          ctx.moveTo(kelp.x + 25 * scaleFactor + 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20), y);
+          ctx.lineTo(kelp.x + 25 * scaleFactor - 8 * scaleFactor * Math.sin(y / (15 * scaleFactor) + frameCount / 20), y + 5 * scaleFactor);
+        }
+        ctx.stroke();
       });
     }
 
     function updateFish() {
-      fish.vy += gravity;
-      fish.y += fish.vy;
-      
-      // Add terminal velocity (maximum falling speed)
-      if (fish.vy > 6) {   // Reduced maximum falling speed
-        fish.vy = 6;
-      }
-      
-      if (fish.y + fish.height > canvas.height || fish.y < 0) {
-        endGame();
+      if (!fish.isDead) {
+        fish.vy += gravity * scaleFactor;
+        fish.y += fish.vy;
+        if (fish.vy > 4 * scaleFactor) {
+          fish.vy = 4 * scaleFactor;
+        }
+        if (fish.y + fish.height > canvas.height || fish.y < 0) {
+          fish.isDead = true;
+          fish.vy = 2 * scaleFactor;
+        }
+      } else {
+        fish.vy += gravity * 1.5 * scaleFactor;
+        fish.y += fish.vy;
+        if (fish.y + fish.height >= canvas.height) {
+          fish.y = canvas.height - fish.height;
+          if (!gameOver) {
+            endGame();
+          }
+        }
       }
     }
 
-    function updatePipes() {
-      if (frameCount % 120 === 0) {
-        let top = Math.random() * (canvas.height - pipeGap - 100) + 50;
-        pipes.push({ x: canvas.width, top: top, bottom: top + pipeGap, scored: false });
+    function updateKelp() {
+      if (frameCount % 200 === 0 && !fish.isDead) {
+        let top = Math.random() * (canvas.height - kelpGap * scaleFactor - 100 * scaleFactor) + 50 * scaleFactor;
+        kelpStalks.push({ x: canvas.width, top: top, bottom: top + kelpGap * scaleFactor, scored: false });
       }
-      pipes.forEach(pipe => {
-        pipe.x -= pipeSpeed;
-        if (!pipe.scored && pipe.x + 50 < fish.x) {
+      // Increase kelpSpeed every 10 seconds (600 frames at ~60 FPS)
+      if (frameCount % 600 === 0 && !fish.isDead) {
+        kelpSpeed = Math.min(2.0, kelpSpeed + 0.1); // Increment by 0.1, cap at 2.0
+      }
+      kelpStalks.forEach(kelp => {
+        kelp.x -= kelpSpeed * scaleFactor;
+        if (!kelp.scored && kelp.x + 50 * scaleFactor < fish.x && !fish.isDead) {
           score++;
-          pipe.scored = true;
+          kelp.scored = true;
         }
-        if (fish.x + fish.width > pipe.x && fish.x < pipe.x + 50 &&
-            (fish.y < pipe.top || fish.y + fish.height > pipe.bottom)) {
-          endGame();
+        if (!fish.isDead && fish.x + fish.width > kelp.x && fish.x < kelp.x + 50 * scaleFactor &&
+            (fish.y < kelp.top || fish.y + fish.height > kelp.bottom)) {
+          fish.isDead = true;
+          fish.vy = 2 * scaleFactor;
+          hitSound.play();
         }
       });
-      pipes = pipes.filter(pipe => pipe.x + 50 > 0);
+      kelpStalks = kelpStalks.filter(kelp => kelp.x + 50 * scaleFactor > 0);
     }
 
     function drawScore() {
       ctx.fillStyle = 'white';
       ctx.strokeStyle = 'black';
-      ctx.lineWidth = 2;
-      ctx.font = '30px Arial';
-      ctx.strokeText(`${score}`, canvas.width / 2, 50);
-      ctx.fillText(`${score}`, canvas.width / 2, 50);
+      ctx.lineWidth = 2 * scaleFactor;
+      ctx.font = `${30 * scaleFactor}px Arial`;
+      ctx.strokeText(`${score}`, canvas.width / 2, 50 * scaleFactor);
+      ctx.fillText(`${score}`, canvas.width / 2, 50 * scaleFactor);
     }
 
     function endGame() {
       gameOver = true;
-      hitSound.play();
       bgMusic.pause();
+      if (score > highScore) {
+        highScore = score;
+        localStorage.setItem('highScore', highScore);
+      }
       gameOverScreen.style.display = 'block';
-      finalScoreText.textContent = `Final Score: ${score}`;
+      highScoreText.textContent = `High Score: ${highScore}`;
+      finalScoreText.textContent = `Score: ${score}`;
     }
 
     function loop() {
@@ -195,64 +330,90 @@
       }
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       drawBackground();
+      drawBubbles();
       drawFish();
-      drawPipes();
+      drawKelp();
       drawScore();
       updateFish();
-      updatePipes();
+      updateKelp();
+      updateBubbles();
       frameCount++;
       requestAnimationFrame(loop);
     }
 
     // Ensure images are loaded before starting
-    Promise.all([
-      new Promise(resolve => backgroundImg.onload = resolve),
-      new Promise(resolve => fishImg.onload = resolve)
-    ]).then(() => {
-      startScreen.style.display = 'block';
+    const imagePromises = [
+      new Promise((resolve, reject) => {
+        backgroundImg.onload = resolve;
+        backgroundImg.onerror = () => reject('Failed to load background.jpg');
+      }),
+      new Promise((resolve, reject) => {
+        fishImg.onload = resolve;
+        fishImg.onerror = () => reject('Failed to load fish.png');
+      }),
+      new Promise((resolve, reject) => {
+        deadFishImg.onload = resolve;
+        deadFishImg.onerror = () => reject('Failed to load dead.png');
+      })
+    ];
 
-      playButton.addEventListener('click', () => {
-        startScreen.style.display = 'none';
-        gameStarted = true;
-        resetGame();
-      });
+    Promise.all(imagePromises)
+      .then(() => {
+        startScreen.style.display = 'block';
 
-      document.addEventListener('keydown', (e) => {
-        if (e.code === 'Space' && !gameOver && gameStarted) {
-          fish.vy = flap;
-          flapSound.play();
-        }
-      });
-
-      canvas.addEventListener('click', () => {
-        if (!gameOver && gameStarted) {
-          fish.vy = flap;
-          flapSound.play();
-        }
-      });
-
-      playAgainBtn.addEventListener('click', resetGame);
-
-      window.addEventListener('online', () => {
-        offlineStatus.classList.add('hidden');
-      });
-
-      window.addEventListener('offline', () => {
-        offlineStatus.classList.remove('hidden');
-      });
-
-      if (!navigator.onLine) {
-        offlineStatus.classList.remove('hidden');
-      }
-
-      if ('serviceWorker' in navigator) {
-        window.addEventListener('load', () => {
-          navigator.serviceWorker.register('sw.js');
+        playButton.addEventListener('click', () => {
+          startScreen.style.display = 'none';
+          gameStarted = true;
+          resetGame();
         });
-      }
 
-      loop();
-    });
+        document.addEventListener('keydown', (e) => {
+          if (e.code === 'Space' && !gameOver && gameStarted && !fish.isDead) {
+            fish.vy = flap * scaleFactor;
+            fish.isFlapping = 12; // Trigger flap animation for 12 frames
+            spawnBubbles();
+            flapSound.play();
+          }
+        });
+
+        canvas.addEventListener('click', () => {
+          if (!gameOver && gameStarted && !fish.isDead) {
+            fish.vy = flap * scaleFactor;
+            fish.isFlapping = 12; // Trigger flap animation for 12 frames
+            spawnBubbles();
+            flapSound.play();
+          }
+        });
+
+        playAgainBtn.addEventListener('click', resetGame);
+
+        window.addEventListener('online', () => {
+          offlineStatus.classList.add('hidden');
+        });
+
+        window.addEventListener('offline', () => {
+          offlineStatus.classList.remove('hidden');
+        });
+
+        if (!navigator.onLine) {
+          offlineStatus.classList.remove('hidden');
+        }
+
+        if ('serviceWorker' in navigator) {
+          window.addEventListener('load', () => {
+            navigator.serviceWorker.register('sw.js').catch(err => {
+              console.error('Service Worker registration failed:', err);
+            });
+          });
+        }
+
+        loop();
+      })
+      .catch(err => {
+        console.error(err);
+        errorMessage.textContent = `Error: ${err}. Please ensure all assets are in the correct directories.`;
+        errorMessage.classList.remove('hidden');
+      });
   </script>
 </body>
 </html>
